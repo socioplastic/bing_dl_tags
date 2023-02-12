@@ -1,3 +1,4 @@
+import numpy as np
 import hashlib
 import ssl
 from pathlib import Path
@@ -18,19 +19,21 @@ from random import randint
 import unicodedata
 from dataclasses import dataclass
 from termcolor import cprint
+import cv2
 
 img_types = [ str(f).replace('.','') for f,u in Image.registered_extensions().items()]
+
+vid_types = ["gif","gifv","m4v","mkv","mpg","mpeg","mp4","avi","wmv","mov","webm","mp2","mpe","mpv","qt","m4p","avchd","ogg"]
 
 @dataclass
 class CFG:
 
-    query: str = "Lambda Lambda Lambda"
-
+    query: str = "Warhammer 40k Imperial Guard"
     output_dir: str = "p:/bing/" #yes, put the slash at the end
     adult_filter: str = "off" # or "on"
     timeout: int = 60
-    filter: str = "+filterui:photo-photo"
-
+    filter: str = ""
+                # "+filterui:photo-photo"
                 # "+filterui:photo-linedrawing"
                 # "+filterui:photo-photo"
                 # "filterui:photo-clipart"
@@ -39,7 +42,6 @@ class CFG:
     limit: int = 1000
     cust_w = 640 # Custom Width Filter
     cust_h = 640 # Custom Width Filter
-
 
 class Bing:
     def __init__(self, config: CFG):
@@ -60,9 +62,7 @@ class Bing:
             self.page_counter = 0
             self.page_counter = 0
             self.download_count = 0
-            self.headers = {'User-Agent': #'Mozilla/5.0 (X11; Linux x86_64) ' 
-                            'AppleWebKit/537.11 (KHTML, like Gecko) '
-                            'Chrome/23.0.1271.64 Safari/537.11',
+            self.headers = {'User-Agent': "Mozilla/5.0 (Windows; U; Win98; en-US; rv:1.6) Gecko/20040206 Firefox/0.8",
                             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                             'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
                             'Accept-Encoding': 'none',
@@ -97,7 +97,6 @@ class Bing:
             ctx.verify_mode = ssl.CERT_NONE
             request = urllib.request.Request(link[0], None, self.headers)
             image = urllib.request.urlopen(request, timeout=self.timeout, context=ctx).read()
-            sleep(randint(1,3))
             cprint("[!] Request-Get!","red")
             if not imghdr.what(None, image):
                 print(f"[Error]Invalid image, not saving {link[0]}\n")
@@ -105,13 +104,45 @@ class Bing:
             md5_calc = hashlib.md5(image).hexdigest()
             cprint(md5_calc,"green")
             img_buf = BytesIO(image)
-            img = Image.open(img_buf).convert("RGB")
-            print(str(self.output_dir).replace(chr(92),'/') +"/" + md5_calc + ".jpg")
-            img.save(f"{self.image_dir}/{str(md5_calc)}.jpg", "JPEG", quality=95)
-            cprint("[!!] ACTUAL SAVE GET","blue") 
-            with open(f"{self.image_dir}/{str(md5_calc)}.txt", 'w') as f:
-                f.write(str(link[1]))
-            self.download_count = self.download_count + 1
+            if link[0][-(link[0][::-1].find('.')):] in img_types and link[0][-(link[0][::-1].find('.')):] not in vid_types:
+                img = Image.open(img_buf).convert("RGB")
+                print(str(self.output_dir).replace(chr(92),'/') +"/" + md5_calc + ".jpg")
+                img.save(f"{self.image_dir}/{str(md5_calc)}.jpg", "JPEG", quality=95)
+                cprint("[!!] ACTUAL SAVE GET","blue")
+                with open(f"{self.image_dir}/{str(md5_calc)}.txt", 'w') as f:
+                    f.write(str(link[1]))
+                self.download_count = self.download_count + 1
+                return           
+            elif link[0][-(link[0][::-1].find('.')):] in vid_types:
+                    img_byte_array = bytearray(image)
+                    with open(f"{self.image_dir}/{str(md5_calc)}.{link[0][-(link[0][::-1].find('.')):]}", 'wb') as f:
+                        x = f"{self.image_dir}/{str(md5_calc)}.{link[0][-(link[0][::-1].find('.')):]}"
+                        f.write(img_byte_array)                
+                    with open(f"{self.image_dir}/{str(md5_calc)}.txt", 'w') as f:
+                        f.write(str(link[1]))                  
+                    vidcap = cv2.VideoCapture(f"{self.image_dir}/{str(md5_calc)}.{link[0][-(link[0][::-1].find('.')):]}",)
+                    success,image = vidcap.read()
+                    count = 0
+                    while success:
+                        try:
+                            if not Path.is_dir(Path(f"{str(self.image_dir)}/{str(md5_calc)}")):
+                                Path.mkdir(Path(f"{self.image_dir}/{str(md5_calc)}"), parents=True)                             
+                            cv2.imwrite(f"{self.image_dir}/{str(md5_calc)}/{str(md5_calc)}_{count}.jpg", image)
+                            success,image = vidcap.read()
+                            count += 1
+                        except KeyboardInterrupt:
+                            sys.exit()
+                        except Exception as e:
+                            logging.error(traceback.format_exc())
+                            with open("error_log.txt","a") as fi:
+                                fi.write(str(logging.error(traceback.format_exc())))
+                        finally: pass
+                    for i in range (0,count):
+                        with open(f"{self.image_dir}/{str(md5_calc)}/{str(md5_calc)}_{count}.txt", 'w') as f:
+                            f.write(str(link[1]))  
+                    self.download_count = self.download_count + 1
+                    count = 0
+                    return
         except KeyboardInterrupt:
             sys.exit()
         except Exception as e:
@@ -134,55 +165,76 @@ class Bing:
                 fi.write(str(logging.error(traceback.format_exc())))
     
     def html_request_gen(self,page_counter):
-        count_me = str(self.limit - (page_counter*35))
         self.pg_count = page_counter
-        f_large = "+filterui:imagesize-large+"
-        f_x_large = "+filterui:imagesize-wallpaper+"
         f_cust = f"+filterui:imagesize-custom_{self.cust_w}_{self.cust_h}+"
-        rq_l_url = f"https://www.bing.com/images/async?q={str(self.query)}&first={self.pg_count}&count={str(count_me)}&adlt={self.adult}&qft={self.filter}{f_large}"
-        rq_x_url = f"https://www.bing.com/images/async?q={str(self.query)}&first={self.pg_count}&count={str(count_me)}&adlt={self.adult}&qft={self.filter}{f_x_large}"
-        rq_c_url = f"https://www.bing.com/images/async?q={str(self.query)}&first={self.pg_count}&count={str(count_me)}&adlt={self.adult}&qft={self.filter}{f_cust}"
-        return [rq_l_url, rq_x_url, rq_c_url]
+        rq_c_url = f"https://www.bing.com/images/async?q={str(self.query)}&first={self.pg_count}&count={str(self.limit)}&adlt={self.adult}&qft={self.filter}{f_cust}"
+        return [rq_c_url]
 
     def link_list_gen(self,html):
-        link_list = []
-        link_list.clear()          
-        links = re.findall('url&quot;:&quot;(.*?)&quot;}"', html)
-        for link in links:
-            link = link + r"&quot;}"
-            s_link = re.findall(r"murl&quot;:&quot;(.*?)&quot",link)[0]
-            tags_1 = bytes(re.findall(r"&quot;,&quot;t&quot;:&quot;(.*?)&quot;,&quot",link)[0],'utf-8')
-            tags_1 = codecs.decode(unicodedata.normalize('NFKD', codecs.decode(tags_1)).encode('ascii', 'ignore'))
-            tags_1 = re.sub(r'[^A-Za-z0-9_ ]+/g','', str(tags_1))
-            tags_2 = bytes(re.findall(r"desc&quot;:&quot;(.*?)&quot;}",link)[0],'utf-8')
-            tags_2 = codecs.decode(unicodedata.normalize('NFKD', codecs.decode(tags_2)).encode('ascii', 'ignore'))
-            tags_2 = re.sub(r'[^A-Za-z0-9_ ]+/g','', str(tags_2))
-            tags = tags_1 + chr(32) + tags_2
-            tags = tags.replace("respond","").replace("comment","").replace("related","").replace("posts","").replace("flags","").replace("notes","").replace("edit","").replace("...","")
-            link_list.append([s_link, tags])                
-        link_list = [x for x in link_list]
-        self = link_list
-        return self
+        try:
+            link_list = []
+            link_list.clear()          
+            links = re.findall('url&quot;:&quot;(.*?)&quot;}"', html)
+            for link in links:
+                link = link + r"&quot;}"
+                s_link = re.findall(r"murl&quot;:&quot;(.*?)&quot",link)[0]
+                tags_1 = bytes(re.findall(r"&quot;,&quot;t&quot;:&quot;(.*?)&quot;,&quot",link)[0],'utf-8')
+                tags_1 = codecs.decode(unicodedata.normalize('NFKD', codecs.decode(tags_1)).encode('ascii', 'ignore'))
+                tags_1 = re.sub(r'[^A-Za-z0-9_ ]+/g','', str(tags_1))
+                tags_2 = bytes(re.findall(r"desc&quot;:&quot;(.*?)&quot;}",link)[0],'utf-8')
+                tags_2 = codecs.decode(unicodedata.normalize('NFKD', codecs.decode(tags_2)).encode('ascii', 'ignore'))
+                tags_2 = re.sub(r'[^A-Za-z0-9_ ]+/g','', str(tags_2))
+                tags = tags_1 + chr(32) + tags_2
+                tags = tags.replace(
+                                    "respond","").replace(
+                                    "comment","").replace(
+                                    "related","").replace(
+                                    "posts","").replace(
+                                    "flags","").replace(
+                                    "notes","").replace(
+                                    "edit","").replace(
+                                    "...","")
+                link_list.append([s_link, tags])                
+            link_list = [x for x in link_list]
+            self = link_list
+            return self
+        except KeyboardInterrupt:
+            sys.exit()
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            with open("error_log.txt","a") as fi:
+                fi.write(str(logging.error(traceback.format_exc())))
+        finally:
+            pass
 
     def html_gen(self,page_counter):
-        self.page_counter = page_counter
-        ret_link_list = []
-        ret_link_list.clear()
-        request_list = []
-        request_list.clear()
-        request_list = self.html_request_gen(self.page_counter)
-        link_list = []        
-        for request_url in request_list:
-            link_list.clear            
-            request = urllib.request.Request(request_url, None, headers=self.headers)
-            response = urllib.request.urlopen(request, context=self.ctx)
-            html = response.read().decode('utf8')
-            if html ==  "":
-                print("[%] No more images are available")
-                break
-            ret_link_list = self.link_list_gen(html)
-            ret_link_list = [link_list.append(x) for x in ret_link_list]
-        return link_list
+        try:
+            self.page_counter = page_counter
+            ret_link_list = []
+            ret_link_list.clear()
+            request_list = []
+            request_list.clear()
+            request_list = self.html_request_gen(self.page_counter)
+            link_list = []        
+            for request_url in request_list:
+                link_list.clear()
+                request = urllib.request.Request(request_url, None, headers=self.headers)
+                response = urllib.request.urlopen(request, context=self.ctx)
+                html = response.read().decode('utf8')
+                if html ==  "":
+                    print("[%] No more images are available")
+                    break
+                ret_link_list = self.link_list_gen(html)
+                ret_link_list = [link_list.append(x) for x in ret_link_list]
+            return link_list
+        except KeyboardInterrupt:
+            sys.exit()
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            with open("error_log.txt","a") as fi:
+                fi.write(str(logging.error(traceback.format_exc())))
+        finally:
+            pass
 
     def run(self):
         try:
@@ -190,9 +242,8 @@ class Bing:
             self.ctx.check_hostname = False
             self.ctx.verify_mode = ssl.CERT_NONE
             self.page_counter = 1
-            while self.download_count < self.limit:
+            while True:
                 cprint(f"\n\n[!!]Indexing page: {self.page_counter}\n","yellow")
-                sleep(randint(1,5))
                 link_list = []
                 link_list.clear()
                 link_list = self.html_gen(self.page_counter)
@@ -205,7 +256,6 @@ class Bing:
                     if self.download_count < self.limit and link[0] not in self.seen:
                         self.seen.add(str(link[0]))
                 self.page_counter = self.page_counter + 1
-            print(f"\n\n[%] Done. Downloaded {self.download_count} images")
         except KeyboardInterrupt:
             sys.exit()
         except Exception as e:
@@ -216,4 +266,3 @@ class Bing:
             pass
 
 Bing(config=CFG)
-
