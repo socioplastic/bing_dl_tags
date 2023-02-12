@@ -13,6 +13,7 @@ This program lets you download tons of images from Bing. Please do not download 
 
 
 Updated: 20230211 - Now extracts all frames from Videos via cv2 into a directory with the original download's MD5 hash
+
 vid_types = ["gif","gifv","m4v","mkv","mpg","mpeg","mp4","avi","wmv","mov","webm","mp2","mpe","mpv","qt","m4p","avchd","ogg"]
 
 Usage:
